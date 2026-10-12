@@ -1,0 +1,18 @@
+# build output
+build/
+out/
+
+# gradle
+.gradle/
+
+# local-only helper script (uses an absolute toolchain path of the author's machine)
+build-local.bat
+
+# editors / IDE
+.idea/
+*.iml
+.vscode/
+
+# misc
+*.log
+.DS_Store

@@ -1,0 +1,21 @@
+name: McQqChatPool
+version: 1.0.0
+main: com.dsh.mcqqchatpool.McQqChatPoolPlugin
+description: 聊天池 - Minecraft 与 QQ 群聊双向互通（本地 NapCat + AstrBot 轮询桥接）
+author: DSH
+website: https://docs.papermc.io/paper/dev/getting-started/
+api-version: '26.2'
+
+permissions:
+  mcqqchatpool.use:
+    description: 查看聊天池列表/详情、加入或退出聊天池
+    default: true
+  mcqqchatpool.send:
+    description: 向聊天池发送消息
+    default: true
+  mcqqchatpool.history:
+    description: 查看聊天池的历史消息
+    default: true
+  mcqqchatpool.reload:
+    description: 重新加载插件配置
+    default: op

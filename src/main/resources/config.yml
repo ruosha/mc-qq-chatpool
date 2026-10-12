@@ -1,0 +1,134 @@
+# ============================================================================
+#  McQqChatPool —— Minecraft(Paper 26.2) 与 QQ 群聊双向互通的「聊天池」桥接
+# ============================================================================
+#
+#  数据流：
+#    游戏内玩家  ──/chatpool send <池> <文本>──►  聊天池（自增 ID 的消息环形缓冲）
+#                                                       │
+#                                    本地 AstrBot 定时 GET /api/v1/messages
+#                                                       │
+#                                                       ▼
+#                                        NapCat ──► 对应的 QQ 群
+#
+#    QQ 群内  ──#mc <文本>──►  AstrBot  POST /api/v1/messages  ──►  聊天池
+#                                                       │
+#                                                       ▼
+#                                    池内在线订阅玩家在游戏内看到这条消息
+#
+#  安全提示：
+#    * HTTP 接口默认只监听 127.0.0.1，请务必把 token 改成随机字符串；
+#    * 若改成 0.0.0.0 监听，强烈建议保留 token，并只在内网放行该端口。
+# ============================================================================
+
+http:
+  # 是否启用内置 HTTP 接口（AstrBot 靠它拉取/推送消息）
+  enabled: true
+  # 监听地址。只给本机的 AstrBot 用就保持 127.0.0.1
+  host: "127.0.0.1"
+  # 监听端口
+  port: 8123
+  # 访问令牌。**必须设置**：填一段随机字符串（例如 `openssl rand -hex 16` 的输出），
+  # 客户端（AstrBot / 你自己的轮询程序）在请求头里带上同一个值。
+  # 留空 = 不校验令牌，本机任意进程都能向服务器注入消息，只建议在完全隔离的环境里这么做。
+  token: ""
+  # 请求体大小上限（字节）
+  max-body-bytes: 65536
+  # QQ 侧每分钟最多能往服务器注入多少条消息，防止刷屏
+  max-inject-per-minute: 60
+  # 是否把每次 HTTP 请求写进服务器日志（排错用）
+  log-requests: false
+
+chat:
+  # 默认聊天池：/chatpool say 与 QQ 群未指定池时使用
+  default-pool: "global"
+  # 玩家进服时是否自动订阅所有 default-join: true 的聊天池
+  auto-join-default-pools: true
+  # 允许 QQ 侧/游戏内使用配置里没定义的池名（会自动新建一个默认配置的池）
+  auto-create-pool: false
+  # 池里每条消息是否同时打印到服务器控制台
+  notify-console: true
+  # 单条消息最大长度（字符），超出会被拒绝
+  max-message-length: 300
+  # 同一个玩家两次发言的最小间隔（毫秒），0 = 不限制
+  min-message-interval-ms: 800
+  # 玩家进服时提示聊天池用法
+  join-hint: true
+
+history:
+  # 是否把聊天记录与订阅关系持久化到 state.yml（重启不丢）
+  persist: true
+  # 自动保存间隔（秒）
+  save-interval-seconds: 300
+  # GET /api/v1/messages 未带 limit 时返回的条数
+  poll-default-limit: 50
+  # GET /api/v1/messages 允许的最大 limit
+  poll-max-limit: 200
+  # 自动新建聊天池时的历史容量
+  default-max-history: 200
+
+# ---------------------------------------------------------------------------
+#  聊天池定义：每个池就是一个独立频道，对应 QQ 群由 AstrBot 侧配置
+#  池名必须是「小写字母/数字/下划线/短横线」，最长 32 字符（会出现在命令与 HTTP 参数里）
+# ---------------------------------------------------------------------------
+pools:
+  global:
+    display-name: "全服"
+    description: "全服公共聊天池，所有人都能看到"
+    # 玩家进服自动订阅
+    default-join: true
+    # 保留多少条历史消息（内存 + state.yml）
+    max-history: 300
+    # 是否把原版聊天栏的内容也写进这个池
+    capture-vanilla-chat: false
+    # 是否允许 QQ 群消息注入本池
+    allow-from-qq: true
+    # 是否允许游戏内命令往本池发言
+    allow-from-mc: true
+  tech:
+    display-name: "技术"
+    description: "红石 / 指令 / 插件讨论"
+    default-join: false
+    max-history: 200
+    capture-vanilla-chat: false
+    allow-from-qq: true
+    allow-from-mc: true
+
+# ---------------------------------------------------------------------------
+#  消息渲染（MiniMessage）。可用占位符：{id} {pool} {source} {sender} {sender_id} {content} {time}
+#  注意：占位符替换后的内容会被转义，玩家无法用 <red> 之类的标签注入样式
+# ---------------------------------------------------------------------------
+formats:
+  qq-to-mc: "<gray>[</gray><aqua>{pool}</aqua><gray>|</gray><gold>QQ</gold><gray>]</gray> <white>{sender}</white><gray> » </gray><white>{content}</white>"
+  mc-to-mc: "<gray>[</gray><aqua>{pool}</aqua><gray>|</gray><green>MC</green><gray>]</gray> <white>{sender}</white><gray> » </gray><white>{content}</white>"
+  console-to-mc: "<gray>[</gray><aqua>{pool}</aqua><gray>|</gray><dark_gray>控制台</dark_gray><gray>]</gray> <gray>{content}</gray>"
+
+# ---------------------------------------------------------------------------
+#  提示文案（MiniMessage）
+# ---------------------------------------------------------------------------
+messages:
+  prefix: "<gray>[</gray><aqua>聊天池</aqua><gray>]</gray> "
+  player-only: "<red>这个命令只能由玩家执行。"
+  reload.done: "<green>配置已重新加载。"
+  pool.not-found: "<red>没有找到聊天池 <white>{pool}</white><red>，用 <white>/chatpool list</white> 看看有哪些。"
+  pool.invalid-name: "<red>聊天池名不合法：只能用字母、数字、下划线和短横线，且以字母或数字开头（最长 32 字符）。"
+  pool.empty-message: "<red>消息内容不能为空。"
+  pool.too-long: "<red>消息太长了（最多 <white>{max}</white> 个字符）。"
+  pool.too-fast: "<red>说得太快了，请等 <white>{ms}</white> 毫秒后再发。"
+  pool.mc-disabled: "<red>聊天池 <white>{pool}</white><red> 不允许游戏内发言。"
+  pool.sent: "<dark_gray>已发送到聊天池 <white>{pool}</white><dark_gray>（#<white>{id}</white><dark_gray>）"
+  pool.joined: "<green>已订阅聊天池 <white>{pool}</white><green>，之后会看到这个池的消息。"
+  pool.already-joined: "<gray>你已经在聊天池 <white>{pool}</white><gray> 里了。"
+  pool.left: "<yellow>已退出聊天池 <white>{pool}</white><yellow>。"
+  pool.not-joined: "<gray>你并没有订阅聊天池 <white>{pool}</white><gray>。"
+  pool.list-header: "<gray>聊天池（<white>{count}</white> 个）："
+  pool.list-entry: "<gray> - <white>{pool}</white> <dark_gray>(</dark_gray><aqua>{display}</aqua><dark_gray>)</dark_gray> <gray>在线 <white>{online}</white>/订阅 <white>{members}</white>/历史 <white>{history}</white>{flags}"
+  pool.info-header: "<gray>聊天池 <white>{pool}</white> <dark_gray>({display})</dark_gray>"
+  pool.info-line: "<gray>  {key}<dark_gray>:</dark_gray> <white>{value}"
+  pool.history-header: "<gray>聊天池 <white>{pool}</white> 最近 <white>{count}</white> 条消息："
+  pool.history-entry: "<dark_gray>#<white>{id}</white> <gray>[</gray><yellow>{source}</yellow><gray>]</gray> <white>{sender}</white><gray> » </gray><white>{content}</white>"
+  pool.history-empty: "<gray>聊天池 <white>{pool}</white><gray> 还没有消息。"
+  pool.who-header: "<gray>聊天池 <white>{pool}</white> 的在线成员（<white>{count}</white>）："
+  pool.who-entry: "<gray> - <white>{player}"
+  pool.who-empty: "<gray>聊天池 <white>{pool}</white><gray> 目前没有在线成员。"
+  join-hint: "<gray>输入 <white>/chatpool help</white> 查看聊天池用法，用 <white>/chatpool say <文本></white> 把消息发到群里。"
+  help: "<gray>聊天池命令：<newline><white>/chatpool list <gray>- 列出所有聊天池<newline><white>/chatpool say <文本> <gray>- 发到默认聊天池<newline><white>/chatpool send <池> <文本> <gray>- 发到指定聊天池<newline><white>/chatpool join <池> <gray>- 订阅一个聊天池<newline><white>/chatpool leave <池> <gray>- 退订一个聊天池<newline><white>/chatpool info <池> <gray>- 查看聊天池详情<newline><white>/chatpool history <池> [条数] <gray>- 查看历史消息<newline><white>/chatpool who <池> <gray>- 查看池内在线成员<newline><white>/chatpool reload <gray>- 重载配置（管理员）<newline><gray>别名：<white>/mcpool<gray>、<white>/mcchat<gray>、<white>/cpool"
