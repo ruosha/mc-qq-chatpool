@@ -37,4 +37,4 @@
   JSON 读写为自带实现（`http/Json.java`）。
 - Folia 兼容：所有交互 Bukkit 的操作都经 `GlobalRegionScheduler` 回到主线程。
 
-[1.0.0]: https://github.com/<username>/mc-qq-chatpool/releases/tag/v1.0.0
+[1.0.0]: https://github.com/ruosha/mc-qq-chatpool/releases/tag/v1.0.0
