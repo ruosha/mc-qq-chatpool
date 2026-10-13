@@ -6,6 +6,7 @@ import com.mcqqchatpool.config.SecurityConfig;
 import com.mcqqchatpool.http.BridgeHttpServer;
 import com.mcqqchatpool.listener.ChatPoolListener;
 import com.mcqqchatpool.pool.ChatPoolManager;
+import com.mcqqchatpool.push.WebhookPusher;
 import com.mcqqchatpool.security.MessageFilter;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -20,7 +21,9 @@ import java.util.concurrent.CompletableFuture;
  *   <li>{@link PluginConfig} 配置读取与默认值补齐</li>
  *   <li>{@link Lang} MiniMessage 文案与消息格式</li>
  *   <li>{@link ChatPoolManager} 聊天池、消息缓冲、订阅关系、持久化</li>
- *   <li>{@link BridgeHttpServer} 给本机 AstrBot 用的 HTTP 接口</li>
+ *   <li>{@link BridgeHttpServer} 给 AstrBot 轮询用的 HTTP 接口</li>
+ *   <li>{@link WebhookPusher} 主动推送（push 模式，给 MC 服务器不在 AstrBot 那台机器时用）</li>
+ *   <li>{@link MessageFilter} 来源白名单 + 敏感内容过滤</li>
  *   <li>{@link ChatPoolCommand} {@code /chatpool} 命令树</li>
  *   <li>{@link ChatPoolListener} 进服订阅与可选的原版聊天捕获</li>
  * </ul>
@@ -31,6 +34,7 @@ public final class McQqChatPoolPlugin extends JavaPlugin {
     private Lang lang;
     private ChatPoolManager pools;
     private BridgeHttpServer http;
+    private WebhookPusher pusher;
     /** 内容过滤器：配置重载时重建（无状态，重建成本极低）。 */
     private MessageFilter messageFilter = new MessageFilter(SecurityConfig.defaults());
 
@@ -48,6 +52,9 @@ public final class McQqChatPoolPlugin extends JavaPlugin {
         this.pools = new ChatPoolManager(this);
         pools.load();
 
+        this.pusher = new WebhookPusher(this);
+        pusher.start();
+
         new ChatPoolCommand(this).register();
         getServer().getPluginManager().registerEvents(new ChatPoolListener(this), this);
 
@@ -57,11 +64,15 @@ public final class McQqChatPoolPlugin extends JavaPlugin {
         scheduleAutosave();
 
         getLogger().info("McQqChatPool 已启用：默认聊天池 = " + config.defaultPool()
-                + "，HTTP 接口 = " + (http.isRunning() ? "已开启（端口 " + http.port() + "）" : "未开启"));
+                + "，HTTP 接口 = " + (http.isRunning() ? "已开启（端口 " + http.port() + "）" : "未开启")
+                + "，主动推送 = " + pusher.summary());
     }
 
     @Override
     public void onDisable() {
+        if (pusher != null) {
+            pusher.stop();
+        }
         if (http != null) {
             http.stop();
         }
@@ -79,7 +90,7 @@ public final class McQqChatPoolPlugin extends JavaPlugin {
                 periodTicks, periodTicks);
     }
 
-    /** {@code /chatpool reload} 用：重载配置、重开 HTTP 接口。 */
+    /** {@code /chatpool reload} 用：重载配置、重开 HTTP 接口、按新配置重建推送器。 */
     public void reloadEverything() {
         reloadConfig();
         config.ensureDefaults();
@@ -91,6 +102,12 @@ public final class McQqChatPoolPlugin extends JavaPlugin {
             http.stop();
             http.start();
         }
+        // 推送器的队列长度/超时在构造时读取，所以重载时整个换掉
+        if (pusher != null) {
+            pusher.stop();
+        }
+        this.pusher = new WebhookPusher(this);
+        pusher.start();
     }
 
     // ---------------------------------------------------------------- 调度器
@@ -140,6 +157,11 @@ public final class McQqChatPoolPlugin extends JavaPlugin {
 
     public BridgeHttpServer http() {
         return http;
+    }
+
+    /** 主动推送器（push 模式），配置重载时随之重建。 */
+    public WebhookPusher pusher() {
+        return pusher;
     }
 
     /** 内容过滤器（来源白名单 + 敏感内容），配置重载时随之重建。 */

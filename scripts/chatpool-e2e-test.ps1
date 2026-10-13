@@ -66,6 +66,8 @@ $outLog        = Join-Path $ServerDir 'console-e2e.log'
 $errLog        = Join-Path $ServerDir 'console-e2e-err.log'
 $pluginConfig  = Join-Path $pluginDataDir 'config.yml'
 $maxLength     = 300   # chat.max-message-length; the real value is read from the plugin config below
+# UTF-8 without BOM: the plugin config must stay BOM-less, otherwise Bukkit cannot parse it
+$enc           = New-Object Text.UTF8Encoding($false)
 
 $script:Passed = 0
 $script:Failed = 0
@@ -341,6 +343,111 @@ try {
     Assert 'GET /messages exposes oldest_id' ($null -ne $full.oldest_id)
     Assert 'total is not smaller than count' ([int]$full.total -ge [int]$full.count)
 
+    # ------------------------------------------------ 主动推送（push 模式）-----
+    # 起一个本地 TCP 接收端，把插件的 push.url 指过来，验证它真的 POST 了消息。
+    # 用 TcpListener 而不是 HttpListener：后者需要 URL ACL 或管理员权限。
+    # 这一段出错必须判失败（而不是静默跳过剩下的断言）——之前就因为 $enc 未定义踩过。
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Stop'
+    try {
+    $pushPort = 19123
+    # 监听 socket 直接开在脚本进程里（不再用 Start-Job：子进程在某些上下文里起不来，
+    # 而插件是异步推送的，主线程随后用 Pending() 非阻塞等待即可）
+    $pushListener = $null
+    try {
+        $pushListener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $pushPort)
+        $pushListener.Start()
+    } catch {
+        Assert 'push receiver could bind its port' $false $_.Exception.Message
+    }
+
+    if (Test-Path $pluginConfig) {
+        $pushBak = "$pluginConfig.e2e-push-bak"
+        Copy-Item $pluginConfig $pushBak -Force
+        $raw = [IO.File]::ReadAllText($pluginConfig, $enc)
+        # push.enabled 是这份配置里唯一值为 false 的 enabled（http/security 都是 true），
+        # 先确认唯一再改，避免误伤别的段
+        $enabledCount = ([regex]::Matches($raw, '(?m)^  enabled: false\s*$')).Count
+        if ($enabledCount -eq 1) {
+            $patched = $raw -replace '(?m)^  enabled: false\s*$', '  enabled: true'
+            $patched = $patched -replace '(?m)^  url:\s*.*$', ('  url: "http://127.0.0.1:' + $pushPort + '/mc-chatpool/push"')
+            # 用刚写好的 url 行当锚点，只改 push.token（http.token 也是 2 空格缩进，不能误伤）
+            $patched = $patched -replace ('(?m)(  url: "http://127\.0\.0\.1:' + $pushPort + '/mc-chatpool/push"\s*\r?\n  token:\s*).*$'), '${1}"e2e-push-token"'
+            [IO.File]::WriteAllText($pluginConfig, $patched, $enc)
+            Send-Rcon $stream 2 2 'chatpool reload'; $null = Read-Rcon $stream
+            Start-Sleep -Seconds 2
+            Send-Rcon $stream 2 2 'chatpool send global push e2e probe'; $null = Read-Rcon $stream
+            Api 'POST' '/api/v1/messages' @{ pool = 'global'; content = 'qq source should not be pushed'; source = 'qq' } $auth | Out-Null
+            # 非阻塞地等插件的 POST（它自己会重试，最多等 20 秒）
+            $received = ''
+            if ($pushListener) {
+                $pushDeadline = (Get-Date).AddSeconds(20)
+                while ((Get-Date) -lt $pushDeadline -and -not $pushListener.Pending()) { Start-Sleep -Milliseconds 200 }
+                if ($pushListener.Pending()) {
+                    $pushClient = $pushListener.AcceptTcpClient()
+                    try {
+                        $pushStream = $pushClient.GetStream()
+                        $pushStream.ReadTimeout = 5000
+                        $pushBuffer = New-Object byte[] 8192
+                        $pushBuilder = New-Object Text.StringBuilder
+                        $pushHeaderEnd = -1
+                        while ($pushHeaderEnd -lt 0) {
+                            $pushRead = $pushStream.Read($pushBuffer, 0, $pushBuffer.Length)
+                            if ($pushRead -le 0) { break }
+                            [void]$pushBuilder.Append([Text.Encoding]::UTF8.GetString($pushBuffer, 0, $pushRead))
+                            $pushHeaderEnd = $pushBuilder.ToString().IndexOf("`r`n`r`n")
+                        }
+                        $pushRaw = $pushBuilder.ToString()
+                        $pushHead = if ($pushHeaderEnd -ge 0) { $pushRaw.Substring(0, $pushHeaderEnd) } else { $pushRaw }
+                        $pushBodyStart = if ($pushHeaderEnd -ge 0) { $pushHeaderEnd + 4 } else { $pushRaw.Length }
+                        $pushLength = 0
+                        foreach ($line in ($pushHead -split "`r`n")) {
+                            if ($line -match '^Content-Length:\s*(\d+)') { $pushLength = [int]$Matches[1] }
+                        }
+                        while (($pushRaw.Length - $pushBodyStart) -lt $pushLength) {
+                            $pushRead = $pushStream.Read($pushBuffer, 0, $pushBuffer.Length)
+                            if ($pushRead -le 0) { break }
+                            [void]$pushBuilder.Append([Text.Encoding]::UTF8.GetString($pushBuffer, 0, $pushRead))
+                            $pushRaw = $pushBuilder.ToString()
+                        }
+                        $pushBody = if ($pushRaw.Length -gt $pushBodyStart) { $pushRaw.Substring($pushBodyStart) } else { '' }
+                        $pushAuth = ''
+                        foreach ($line in ($pushHead -split "`r`n")) {
+                            if ($line -match '^Authorization:\s*(.+)$') { $pushAuth = $Matches[1].Trim() }
+                        }
+                        $received = "AUTH=" + $pushAuth + " BODY=" + $pushBody
+                        $pushResponse = "HTTP/1.1 200 OK`r`nContent-Type: application/json`r`nContent-Length: 22`r`nConnection: close`r`n`r`n{""ok"":true,""queued"":1}"
+                        $pushBytes = [Text.Encoding]::UTF8.GetBytes($pushResponse)
+                        $pushStream.Write($pushBytes, 0, $pushBytes.Length)
+                        $pushStream.Flush()
+                    } catch {
+                        $received = "READER-ERROR " + $_.Exception.Message
+                    } finally {
+                        try { $pushClient.Close() } catch { }
+                    }
+                }
+            }
+            Assert 'push mode POSTs pool messages to the receiver' ($received -match 'push e2e probe') "got: $received"
+            Assert 'push request carries the bearer token' ($received -match 'Bearer e2e-push-token') "got: $received"
+            Assert 'push payload carries pool and source' (($received -match '"pool":"global"') -and ($received -match '"source":"console"')) "got: $received"
+            Assert 'push skips qq-sourced messages' (-not ($received -match 'should not be pushed')) "got: $received"
+        } else {
+            Write-Host "    config.yml has $enabledCount 'enabled: false' keys - skipping the push checks"
+        }
+        Copy-Item $pushBak $pluginConfig -Force
+        Remove-Item $pushBak -Force
+        Send-Rcon $stream 2 2 'chatpool reload'; $null = Read-Rcon $stream
+        Start-Sleep -Seconds 2
+    } else {
+        Write-Host '    plugin config.yml not found - skipping the push checks'
+    }
+    } catch {
+        Assert 'push-mode checks completed without errors' $false $_.Exception.Message
+    } finally {
+        $ErrorActionPreference = $previousEap
+        if ($pushListener) { try { $pushListener.Stop() } catch { } }
+    }
+
     # --------------------------------- 历史保留：retain-all 开/关的行为对比 ----
     $cfgBackup = "$pluginConfig.e2e-bak"
     if (Test-Path $pluginConfig) {
@@ -421,6 +528,12 @@ Assert 'state.yml written on shutdown' (Test-Path $stateFile)
 Assert 'plugin config.yml generated' (Test-Path $pluginConfig)
 
 Write-Host ''
+$executed = $script:Passed + $script:Failed
+$declared = ([regex]::Matches([IO.File]::ReadAllText($PSCommandPath, [Text.Encoding]::UTF8), '\bAssert\s')).Count
 Write-Host ("Results:{0} passed, {1} failed" -f $script:Passed, $script:Failed)
+if ($executed -lt $declared) {
+    # 有些 Assert 是条件执行的，这里只提示；数字突然变小往往意味着某段被异常跳过了
+    Write-Host ("    NOTE: executed {0} of {1} declared Assert calls (some are conditional)" -f $executed, $declared)
+}
 if ($script:Failed -gt 0) { exit 1 }
 exit 0

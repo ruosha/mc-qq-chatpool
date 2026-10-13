@@ -54,6 +54,18 @@ public final class PluginConfig {
     // ---- security ----
     private SecurityConfig security = SecurityConfig.defaults();
 
+    // ---- push（主动推送：MC 服务器不在 AstrBot 那台机器上时用）----
+    private boolean pushEnabled = false;
+    private String pushUrl = "http://127.0.0.1:6198/mc-chatpool/push";
+    private String pushToken = "";
+    private Set<String> pushExcludeSources = Set.of("qq");
+    private Set<String> pushPools = Set.of();
+    private int pushTimeoutMs = 5000;
+    private int pushMaxRetries = 3;
+    private long pushRetryDelayMs = 1000L;
+    private int pushQueueSize = 512;
+    private boolean pushLogRequests = false;
+
     private Map<String, PoolConfig> pools = new LinkedHashMap<>();
 
     public PluginConfig(final McQqChatPoolPlugin plugin) {
@@ -101,6 +113,17 @@ public final class PluginConfig {
                 "op", "deop", "ban", "ban-ip", "pardon", "kick", "whitelist", "gamemode", "execute", "sudo"));
         changed |= setIfMissing(config, "security.filter.max-links", 0);
         changed |= setIfMissing(config, "security.filter.apply-to-game-chat", false);
+
+        changed |= setIfMissing(config, "push.enabled", false);
+        changed |= setIfMissing(config, "push.url", "http://127.0.0.1:6198/mc-chatpool/push");
+        changed |= setIfMissing(config, "push.token", "");
+        changed |= setIfMissing(config, "push.exclude-sources", List.of("qq"));
+        changed |= setIfMissing(config, "push.pools", List.of());
+        changed |= setIfMissing(config, "push.timeout-ms", 5000);
+        changed |= setIfMissing(config, "push.max-retries", 3);
+        changed |= setIfMissing(config, "push.retry-delay-ms", 1000);
+        changed |= setIfMissing(config, "push.queue-size", 512);
+        changed |= setIfMissing(config, "push.log-requests", false);
 
         final ConfigurationSection poolSection = config.getConfigurationSection("pools");
         if (poolSection == null || poolSection.getKeys(false).isEmpty()) {
@@ -175,6 +198,18 @@ public final class PluginConfig {
                 Math.max(0, config.getInt("security.filter.max-links", 0)),
                 config.getBoolean("security.filter.apply-to-game-chat", false),
                 Set.copyOf(allowedSources));
+
+        // ---- push ----
+        this.pushEnabled = config.getBoolean("push.enabled", false);
+        this.pushUrl = config.getString("push.url", "http://127.0.0.1:6198/mc-chatpool/push");
+        this.pushToken = config.getString("push.token", "");
+        this.pushExcludeSources = lowerSet(config.getStringList("push.exclude-sources"));
+        this.pushPools = normalizeSet(config.getStringList("push.pools"));
+        this.pushTimeoutMs = clamp(config.getInt("push.timeout-ms", 5000), 500, 60_000);
+        this.pushMaxRetries = clamp(config.getInt("push.max-retries", 3), 1, 10);
+        this.pushRetryDelayMs = Math.max(0L, config.getLong("push.retry-delay-ms", 1000L));
+        this.pushQueueSize = clamp(config.getInt("push.queue-size", 512), 1, 100_000);
+        this.pushLogRequests = config.getBoolean("push.log-requests", false);
 
         final Map<String, PoolConfig> parsed = new LinkedHashMap<>();
         final ConfigurationSection section = config.getConfigurationSection("pools");
@@ -323,7 +358,83 @@ public final class PluginConfig {
         return security;
     }
 
+    // ---- push ----
+
+    /** 是否开启主动推送（还要 push.url 非空才真正生效）。 */
+    public boolean pushEnabled() {
+        return pushEnabled;
+    }
+
+    /** AstrBot 推送接收端地址。 */
+    public String pushUrl() {
+        return pushUrl == null ? "" : pushUrl;
+    }
+
+    /** 与接收端约定的令牌（放在 Authorization: Bearer）。 */
+    public String pushToken() {
+        return pushToken == null ? "" : pushToken;
+    }
+
+    /** 这些来源的消息不回推（默认丢 qq，避免 QQ → MC → QQ 回环）。 */
+    public Set<String> pushExcludeSources() {
+        return pushExcludeSources;
+    }
+
+    /** 只推送这些池；空集合 = 全部池。 */
+    public Set<String> pushPools() {
+        return pushPools;
+    }
+
+    public int pushTimeoutMs() {
+        return pushTimeoutMs;
+    }
+
+    public int pushMaxRetries() {
+        return pushMaxRetries;
+    }
+
+    public long pushRetryDelayMs() {
+        return pushRetryDelayMs;
+    }
+
+    public int pushQueueSize() {
+        return pushQueueSize;
+    }
+
+    /** 是否把每次推送的入队与结果写进日志（跨机部署排错时打开）。 */
+    public boolean pushLogRequests() {
+        return pushLogRequests;
+    }
+
     public Map<String, PoolConfig> pools() {
         return pools;
+    }
+
+    /** 来源列表统一转小写（HTTP 注入的 source 也是小写比较）。 */
+    private static Set<String> lowerSet(final List<String> raw) {
+        final Set<String> out = new LinkedHashSet<>();
+        for (final String item : raw) {
+            if (item != null && !item.isBlank()) {
+                out.add(item.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        return Set.copyOf(out);
+    }
+
+    /** 池名列表按池名规则归一化；不合法的直接忽略并警告。 */
+    private Set<String> normalizeSet(final List<String> raw) {
+        final Set<String> out = new LinkedHashSet<>();
+        for (final String item : raw) {
+            final String name = normalize(item);
+            if (name.isEmpty()) {
+                continue;
+            }
+            if (!isValidPoolName(name)) {
+                plugin.getLogger().warning("push.pools 里的 '" + item + "' 不是合法池名，已忽略。");
+                continue;
+            }
+            out.add(name);
+        }
+        return Set.copyOf(out);
     }
 }

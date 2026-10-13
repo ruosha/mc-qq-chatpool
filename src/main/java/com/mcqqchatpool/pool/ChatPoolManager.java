@@ -210,6 +210,9 @@ public final class ChatPoolManager {
 
         final int delivered = broadcast(pool, message);
 
+        // 主动推送（push 模式）：往发送队列里塞一下就走，不阻塞主线程 / HTTP 线程
+        plugin.pusher().offer(message);
+
         if (plugin.config().notifyConsole()) {
             plugin.getLogger().info("[" + pool.name() + "/" + source + "] " + sender + ": " + content);
         }
@@ -438,6 +441,7 @@ public final class ChatPoolManager {
         info.put("security_filter", plugin.config().security().filterEnabled()
                 ? plugin.config().security().action().name().toLowerCase(java.util.Locale.ROOT)
                 : "off");
+        info.put("push", plugin.pusher() == null ? "off" : plugin.pusher().summary());
         info.put("history", pool.size());
         info.put("members", pool.subscriberCount());
         info.put("online", onlineSubscriberNames(pool).size());

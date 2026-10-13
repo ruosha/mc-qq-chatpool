@@ -18,11 +18,19 @@
     `action` 可选 `reject`（默认，拒绝并回 403）、`censor`（打码后放行）、`log`（只记日志）；
     `apply-to-game-chat` 可把过滤扩展到游戏内玩家发言。
 - `messages.security.blocked` 文案；`/chatpool info` 增加「历史保留上限」与「安全过滤」两行。
+- **主动推送（push 模式）**：新增 `push` 段，可把入池的消息 POST 给 AstrBot 的推送接收端
+  （`push.enabled` / `push.url` / `push.token` / `push.exclude-sources` / `push.pools` /
+  `push.timeout-ms` / `push.max-retries` / `push.retry-delay-ms` / `push.queue-size` /
+  `push.log-requests`）。用于「MC 服务器不在 AstrBot 那台机器上、轮询拉不到 8123」的场景：
+  发布路径只做非阻塞入队，失败按 `max-retries` 重试后只记警告（消息仍在池历史里，可用轮询兜底），
+  队列满时丢最旧并限流告警；`/chatpool info` 增加「主动推送」一行。
 
 ### 变更
 
-- 端到端脚本断言从 33 项增加到 **48 项**：新增 6 项安全过滤、3 项 `total`/`oldest_id`、
-  4 项 `retain-all` 开/关对比（会临时改插件 `config.yml`，带备份与 `finally` 安全网）。
+- 端到端脚本断言从 33 项增加到 **52 项**：新增 6 项安全过滤、3 项 `total`/`oldest_id`、
+  4 项 `retain-all` 开/关对比、4 项主动推送（脚本内起一个本地 TCP 接收端，
+  断言真的收到了 POST、Bearer 令牌正确、payload 含 pool/source、qq 来源不被推送）；
+  这些会临时改插件 `config.yml`（带备份与 `finally` 安全网），某段出错会**判失败**而不是静默跳过。
 
 ## [1.0.0] - 2026-10-12
 
