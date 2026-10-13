@@ -1,6 +1,6 @@
-package com.dsh.mcqqchatpool.config;
+package com.mcqqchatpool.config;
 
-import com.dsh.mcqqchatpool.McQqChatPoolPlugin;
+import com.mcqqchatpool.McQqChatPoolPlugin;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 

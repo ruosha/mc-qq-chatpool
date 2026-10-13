@@ -1,4 +1,4 @@
-package com.dsh.mcqqchatpool;
+package com.mcqqchatpool;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;

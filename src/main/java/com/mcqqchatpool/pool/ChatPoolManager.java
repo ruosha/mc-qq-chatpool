@@ -1,8 +1,8 @@
-package com.dsh.mcqqchatpool.pool;
+package com.mcqqchatpool.pool;
 
-import com.dsh.mcqqchatpool.McQqChatPoolPlugin;
-import com.dsh.mcqqchatpool.config.PluginConfig;
-import com.dsh.mcqqchatpool.config.PoolConfig;
+import com.mcqqchatpool.McQqChatPoolPlugin;
+import com.mcqqchatpool.config.PluginConfig;
+import com.mcqqchatpool.config.PoolConfig;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;

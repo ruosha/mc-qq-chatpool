@@ -1,6 +1,6 @@
 name: McQqChatPool
 version: 1.0.0
-main: com.dsh.mcqqchatpool.McQqChatPoolPlugin
+main: com.mcqqchatpool.McQqChatPoolPlugin
 description: 聊天池 - Minecraft 与 QQ 群聊双向互通（本地 NapCat + AstrBot 轮询桥接）
 author: ruosha
 website: https://github.com/ruosha/mc-qq-chatpool

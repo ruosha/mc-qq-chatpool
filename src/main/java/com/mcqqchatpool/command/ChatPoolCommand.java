@@ -1,8 +1,8 @@
-package com.dsh.mcqqchatpool.command;
+package com.mcqqchatpool.command;
 
-import com.dsh.mcqqchatpool.McQqChatPoolPlugin;
-import com.dsh.mcqqchatpool.pool.ChatMessage;
-import com.dsh.mcqqchatpool.pool.ChatPool;
+import com.mcqqchatpool.McQqChatPoolPlugin;
+import com.mcqqchatpool.pool.ChatMessage;
+import com.mcqqchatpool.pool.ChatPool;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -117,8 +117,8 @@ public final class ChatPoolCommand {
 
     /** 解析池名；不合法或不存在时给出提示并返回 null。 */
     private ChatPool resolvePool(final CommandSender sender, final String poolName, final boolean createIfAllowed) {
-        final String normalized = com.dsh.mcqqchatpool.config.PluginConfig.normalize(poolName);
-        if (!com.dsh.mcqqchatpool.config.PluginConfig.isValidPoolName(normalized)) {
+        final String normalized = com.mcqqchatpool.config.PluginConfig.normalize(poolName);
+        if (!com.mcqqchatpool.config.PluginConfig.isValidPoolName(normalized)) {
             plugin.lang().send(sender, "pool.invalid-name");
             return null;
         }

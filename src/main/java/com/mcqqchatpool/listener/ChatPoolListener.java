@@ -1,8 +1,8 @@
-package com.dsh.mcqqchatpool.listener;
+package com.mcqqchatpool.listener;
 
-import com.dsh.mcqqchatpool.McQqChatPoolPlugin;
-import com.dsh.mcqqchatpool.pool.ChatMessage;
-import com.dsh.mcqqchatpool.pool.ChatPool;
+import com.mcqqchatpool.McQqChatPoolPlugin;
+import com.mcqqchatpool.pool.ChatMessage;
+import com.mcqqchatpool.pool.ChatPool;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;

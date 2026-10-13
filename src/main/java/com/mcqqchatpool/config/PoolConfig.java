@@ -1,4 +1,4 @@
-package com.dsh.mcqqchatpool.config;
+package com.mcqqchatpool.config;
 
 import org.bukkit.configuration.ConfigurationSection;
 
