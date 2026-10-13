@@ -28,7 +28,7 @@ Discord、Telegram 等由你决定），**外部程序也能把消息注入回�
 |---|---|
 | 服务端 | **Paper 26.2**（构建 132 已验证；同大版本其它构建应兼容） |
 | Java | **Java 25**（Paper 26.x 的硬性要求） |
-| 编译（可选） | 想自己改代码才需要；JDK 25 即可，Gradle 由包内 wrapper 自动准备 |
+| 编译（可选） | 想自己改代码才需要；JDK 25 即可，Maven 由包内 wrapper `mvnw` 自动准备（本分支为 Maven，`main` 分支为 Gradle） |
 
 ## 2. 安装
 
@@ -296,7 +296,10 @@ messages:     # 所有提示文案，同样是 MiniMessage，可随意改
 
 ## 7. 自己编译
 
-需要 **JDK 25**（Gradle 由包内 wrapper 自动准备）。Windows 上一键：
+> 这个分支（`maven`）用 **Maven** 构建。`main` 分支是等价的 Gradle 版本，源码完全相同，
+> 两个分支编出来的插件包逐字节一致（只差 Maven 标准的 `META-INF/maven/` 元数据）。
+
+需要 **JDK 25**（Maven 由包内 wrapper `mvnw` 自动准备，不必自己装）。Windows 上一键：
 
 ```bat
 build.bat
@@ -309,22 +312,23 @@ build.bat
 build.bat nopause                 :: 供 CI/任务调用，结束时不等按键
 set MCQQ_DEPLOY_DIR=D:\mc\plugins :: 指定部署目录（找不到 ..\server\plugins 时用）
 set JAVA_HOME=D:\jdk-25           :: 明确指定 JDK
-set GRADLE_USER_HOME=D:\gradle    :: 指定 Gradle 缓存目录（默认用用户目录）
 ```
 
 手动编译：
 
 ```bash
-./gradlew build          # Linux/macOS
-gradlew.bat build        # Windows
-# 或已装 Gradle 9.x：
-gradle build
+./mvnw package           # Linux/macOS
+mvnw.cmd package         # Windows
+# 或已装 Maven 3.9+：
+mvn package
 ```
 
-产物在 `build/libs/mc-qq-chatpool-1.0.0.jar`。
+产物在 `target/mc-qq-chatpool-1.0.0.jar`（`finalName` 里写死了与 Gradle 分支相同的文件名）。
 
-依赖只有 `io.papermc.paper:paper-api:26.2.build.132-stable`（compileOnly）+ Java 25 工具链，
-不 shade 任何库——JSON 读写是插件内自己实现的。
+依赖只有 `io.papermc.paper:paper-api:26.2.build.132-stable`（`provided`）+ Java 25，
+不 shade 任何库——JSON 读写是插件内自己实现的，所以普通的 `maven-jar-plugin` 打出来的就是最终产物。
+
+> 若本机 `~/.m2` 不可写（受限环境），用 `mvn -Dmaven.repo.local=<可写目录> package` 指定本地仓库。
 
 ---
 

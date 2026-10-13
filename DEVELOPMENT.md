@@ -10,22 +10,33 @@
 ├─ server\                 服务端运行目录，plugins\ 是部署目标
 └─ tools\
    ├─ jdk25.0.4_10\        Java 25（离线，服务端与编译都用它）
-   ├─ gradle-9.8.1\        本地 Gradle 安装
+   ├─ maven-3.9.9\         本地 Maven（maven 分支用）
+   ├─ maven-repo\          Maven 本地仓库（-Dmaven.repo.local，避免写 ~/.m2）
+   ├─ maven-home\          Maven wrapper 的发行版缓存（MAVEN_USER_HOME）
+   ├─ gradle-9.8.1\        main 分支用的本地 Gradle
    └─ gradle-home\         Gradle 依赖缓存（预下载 paper-api，可离线构建）
 ```
 
-如果本机 `%USERPROFILE%\.gradle` 不可写，构建时把 `GRADLE_USER_HOME` 指到 `tools\gradle-home`。
+本机 `%USERPROFILE%\.m2`、`%USERPROFILE%\.gradle` 都**不可写**（受限环境），
+所以两个构建系统都把缓存指到工作区里：Maven 用 `-Dmaven.repo.local=` 与 `MAVEN_USER_HOME`，
+Gradle 用 `GRADLE_USER_HOME`。
 
-## 构建
+## 构建（本分支 = Maven）
 
 仓库里提交的 `build.bat` 是**可移植版**：自动找 JDK 25（含 `..\tools\jdk25.0.4_10`）、
-用包内 Gradle wrapper。在开发机上跑之前按需设置环境变量：
+用包内 Maven wrapper。在开发机上跑之前按需设置环境变量：
 
 ```bat
 set "JAVA_HOME=<PAPER_ROOT>\tools\jdk25.0.4_10"
-set "GRADLE_USER_HOME=<PAPER_ROOT>\tools\gradle-home"
 set "MCQQ_DEPLOY_DIR=<PAPER_ROOT>\server\plugins"
 build.bat nopause
+```
+
+受限环境下要额外指定 Maven 的仓库/缓存位置：
+
+```bat
+set "MAVEN_USER_HOME=<PAPER_ROOT>\tools\maven-home"
+mvnw.cmd -Dmaven.repo.local=<PAPER_ROOT>\tools\maven-repo package
 ```
 
 作者的机器上另外留了一个 `build-local.bat`（不提交，在 `.gitignore` 里），

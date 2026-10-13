@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, maven ]
     tags: [ 'v*' ]
   pull_request:
   workflow_dispatch:
@@ -22,18 +22,16 @@ jobs:
         with:
           java-version: '25'
           distribution: 'temurin'
+          cache: maven
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Build
-        run: ./gradlew build --no-daemon --console=plain
+      - name: Build with Maven
+        run: ./mvnw -B package
 
       - name: Upload the plugin jar
         uses: actions/upload-artifact@v4
         with:
           name: mc-qq-chatpool
-          path: build/libs/mc-qq-chatpool-*.jar
+          path: target/mc-qq-chatpool-*.jar
           if-no-files-found: error
 
   release:
@@ -51,9 +49,14 @@ jobs:
         with:
           java-version: '25'
           distribution: 'temurin'
+          cache: maven
 
-      - name: Build
-        run: ./gradlew build --no-daemon --console=plain
+      # 复用 build job 已经打好的 jar，不再重新编译一遍
+      - name: Download the jar built by the build job
+        uses: actions/download-artifact@v4
+        with:
+          name: mc-qq-chatpool
+          path: target
 
       - name: Create the release
         env:
@@ -62,4 +65,4 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
-            build/libs/mc-qq-chatpool-*.jar
+            target/mc-qq-chatpool-*.jar

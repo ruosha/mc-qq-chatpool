@@ -1,6 +1,6 @@
 @echo off
 rem ===========================================================================
-rem  McQqChatPool - build script (Paper 26.2 plugin)
+rem  McQqChatPool - build script (Maven variant - see the "maven" branch)
 rem
 rem  Usage:
 rem    build.bat               build, then deploy the jar if a target dir is found
@@ -8,11 +8,10 @@ rem    build.bat nopause       same, but do not wait for a key press at the end
 rem
 rem  Optional environment variables:
 rem    JAVA_HOME          JDK 25 home (checked; ignored if it is not JDK 25)
-rem    GRADLE_USER_HOME   Gradle home / dependency cache (default: user profile)
 rem    MCQQ_DEPLOY_DIR    where to copy the built jar, e.g. ...\server\plugins
 rem
-rem  Requirements: JDK 25. Gradle is not required - the bundled wrapper is used
-rem  (first run downloads Gradle 9.8.1, or reuses a cached distribution).
+rem  Requirements: JDK 25. Maven itself is not required - the bundled wrapper
+rem  (mvnw.cmd) downloads it on first run.
 rem
 rem  NOTE: keep this file ASCII-only. cmd.exe parses .bat files with the OEM
 rem  codepage, so non-ASCII text corrupts the script.
@@ -20,7 +19,7 @@ rem ===========================================================================
 setlocal
 set "PLUGIN_DIR=%~dp0"
 if "%PLUGIN_DIR:~-1%"=="\" set "PLUGIN_DIR=%PLUGIN_DIR:~0,-1%"
-set "JAR=%PLUGIN_DIR%\build\libs\mc-qq-chatpool-1.0.0.jar"
+set "JAR=%PLUGIN_DIR%\target\mc-qq-chatpool-1.0.0.jar"
 
 set "NOPAUSE="
 if /i "%~1"=="nopause" set "NOPAUSE=1"
@@ -40,13 +39,10 @@ if not defined JDK (
 )
 set "JAVA_HOME=%JDK%"
 
-rem ------------------------------------------------- Gradle home/cache ---
-if not defined GRADLE_USER_HOME if exist "%PLUGIN_DIR%\..\tools\gradle-home" set "GRADLE_USER_HOME=%PLUGIN_DIR%\..\tools\gradle-home"
-
-rem -------------------------------------------------- Gradle command ---
-set "GRADLE_CMD="
-if exist "%PLUGIN_DIR%\gradlew.bat" set "GRADLE_CMD=%PLUGIN_DIR%\gradlew.bat"
-if not defined GRADLE_CMD set "GRADLE_CMD=gradle"
+rem -------------------------------------------------- Maven command ---
+set "MVN_CMD="
+if exist "%PLUGIN_DIR%\mvnw.cmd" set "MVN_CMD=%PLUGIN_DIR%\mvnw.cmd"
+if not defined MVN_CMD set "MVN_CMD=mvn"
 
 rem --------------------------------------------------- deploy target ---
 set "DEPLOY_DIR="
@@ -54,10 +50,10 @@ if defined MCQQ_DEPLOY_DIR set "DEPLOY_DIR=%MCQQ_DEPLOY_DIR%"
 if not defined DEPLOY_DIR if exist "%PLUGIN_DIR%\..\server\plugins" set "DEPLOY_DIR=%PLUGIN_DIR%\..\server\plugins"
 
 echo.
-echo [2/3] Building McQqChatPool ...
+echo [2/3] Building McQqChatPool with Maven ...
 echo        JAVA_HOME = %JAVA_HOME%
-echo        Gradle    = %GRADLE_CMD%
-call "%GRADLE_CMD%" build --console=plain --project-dir "%PLUGIN_DIR%"
+echo        Maven     = %MVN_CMD%
+call "%MVN_CMD%" -B -f "%PLUGIN_DIR%\pom.xml" package
 if errorlevel 1 (
   echo.
   echo [ERROR] Build failed.

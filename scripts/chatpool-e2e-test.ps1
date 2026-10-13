@@ -29,7 +29,8 @@ param(
     [string]$JavaExe = 'java',
     # Server jar. Defaults to the single paper-*.jar found in ServerDir.
     [string]$ServerJar = '',
-    # Plugin jar. Defaults to <PluginDir>\build\libs\mc-qq-chatpool-1.0.0.jar
+    # Plugin jar. Defaults to <PluginDir>\target\mc-qq-chatpool-1.0.0.jar
+    # (the Maven output dir on this branch; on the main/Gradle branch it is build\libs\)
     [string]$JarPath = '',
     # Build script to invoke (unless -SkipBuild). Defaults to <PluginDir>\build.bat,
     # the portable one. Point it somewhere else when your toolchain lives outside
@@ -50,7 +51,7 @@ $ErrorActionPreference = 'Continue'
 if (-not $PluginDir) { $PluginDir = Split-Path -Parent $PSScriptRoot }
 $ServerDir = (Resolve-Path $ServerDir).Path
 $PluginDir = (Resolve-Path $PluginDir).Path
-if (-not $JarPath) { $JarPath = Join-Path $PluginDir 'build\libs\mc-qq-chatpool-1.0.0.jar' }
+if (-not $JarPath) { $JarPath = Join-Path $PluginDir 'target\mc-qq-chatpool-1.0.0.jar' }
 if (-not $BuildScript) { $BuildScript = Join-Path $PluginDir 'build.bat' }
 if (-not $ServerJar) {
     $candidate = Get-ChildItem $ServerDir -Filter 'paper-*.jar' -File | Select-Object -First 1

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  McQqChatPool - Maven 构建（maven 分支）
+
+  main 分支用 Gradle；这个分支把构建换成 Maven，源码与产物保持一致：
+    Gradle: build.gradle.kts  ->  build/libs/mc-qq-chatpool-1.0.0.jar
+    Maven : pom.xml           ->  target/mc-qq-chatpool-1.0.0.jar
+
+  插件运行时零第三方依赖，paper-api 用 provided 作用域（服务端自带），
+  因此不需要 shade，普通 maven-jar-plugin 打的包就是最终产物。
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.dsh</groupId>
+  <artifactId>mc-qq-chatpool</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>McQqChatPool</name>
+  <description>Paper 26.2 插件：把服务器聊天做成「聊天池」，通过本机 HTTP 接口与外部程序（如 QQ 群机器人）双向互通</description>
+  <url>https://github.com/ruosha/mc-qq-chatpool</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <!-- Paper 26.x 要求 Java 25 -->
+    <maven.compiler.release>25</maven.compiler.release>
+    <paper.api.version>26.2.build.132-stable</paper.api.version>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>papermc</id>
+      <name>PaperMC repository</name>
+      <url>https://repo.papermc.io/repository/maven-public/</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <!-- 服务端提供，不打进插件包 -->
+    <dependency>
+      <groupId>io.papermc.paper</groupId>
+      <artifactId>paper-api</artifactId>
+      <version>${paper.api.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <!-- 与 Gradle 分支同样的产物名，方便脚本/文档通用 -->
+    <finalName>mc-qq-chatpool-${project.version}</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>${maven.compiler.release}</release>
+          <encoding>UTF-8</encoding>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <!-- src/main/resources 下的 plugin.yml / config.yml 会按 Maven 默认行为打进包里 -->
+          <archive>
+            <manifestEntries>
+              <Implementation-Title>McQqChatPool</Implementation-Title>
+              <Implementation-Version>${project.version}</Implementation-Version>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

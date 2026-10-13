@@ -1,8 +1,9 @@
-# build output
-build/
-out/
+# Maven build output
+target/
 
-# gradle
+# Gradle leftovers: only relevant if you built the main branch in this same
+# working copy before switching to this one - ignored so the tree stays clean.
+build/
 .gradle/
 
 # local-only helper script (uses an absolute toolchain path of the author's machine)
