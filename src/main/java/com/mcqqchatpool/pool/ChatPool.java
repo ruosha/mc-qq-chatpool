@@ -33,9 +33,18 @@ public final class ChatPool {
     private volatile PoolConfig config;
     private volatile long lastId;
 
+    /**
+     * 实际保留条数上限。
+     *
+     * <p>默认等于本池的 {@code max-history}；开启 {@code history.retain-all} 后由
+     * {@link ChatPoolManager} 统一改成全局上限（这正是「读取全部聊天记录」的前提）。
+     */
+    private volatile int retentionCap;
+
     public ChatPool(final String name, final PoolConfig config) {
         this.name = name;
         this.config = config;
+        this.retentionCap = Math.max(1, config.maxHistory());
     }
 
     public String name() {
@@ -48,7 +57,19 @@ public final class ChatPool {
 
     public void config(final PoolConfig config) {
         this.config = config;
+        this.retentionCap = Math.max(1, config.maxHistory());
         trim();
+    }
+
+    /** 设置实际保留上限（配置重载时由管理器统一覆盖）。 */
+    public void retentionCap(final int cap) {
+        this.retentionCap = Math.max(1, cap);
+        trim();
+    }
+
+    /** 当前实际的保留上限。 */
+    public int retentionCap() {
+        return retentionCap;
     }
 
     /** 池内当前最大 ID（相当于这个池的游标位置）。 */
@@ -58,7 +79,7 @@ public final class ChatPool {
 
     // ------------------------------------------------------------ 消息缓冲
 
-    /** 追加一条消息，并按 max-history 裁剪。 */
+    /** 追加一条消息，并按 {@link #retentionCap} 裁剪。 */
     public void append(final ChatMessage message) {
         lock.lock();
         try {
@@ -66,7 +87,7 @@ public final class ChatPool {
             if (message.id() > lastId) {
                 lastId = message.id();
             }
-            while (history.size() > Math.max(1, config.maxHistory())) {
+            while (history.size() > retentionCap) {
                 history.removeFirst();
             }
         } finally {
@@ -74,13 +95,23 @@ public final class ChatPool {
         }
     }
 
-    /** 按新的 max-history 裁剪一次。 */
+    /** 按当前的保留上限裁剪一次。 */
     public void trim() {
         lock.lock();
         try {
-            while (history.size() > Math.max(1, config.maxHistory())) {
+            while (history.size() > retentionCap) {
                 history.removeFirst();
             }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** 池内最早一条（仍被保留的）消息 ID；池为空时等于 {@link #cursor()}。 */
+    public long firstId() {
+        lock.lock();
+        try {
+            return history.isEmpty() ? lastId : history.peekFirst().id();
         } finally {
             lock.unlock();
         }

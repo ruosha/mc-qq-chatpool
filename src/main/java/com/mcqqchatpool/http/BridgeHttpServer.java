@@ -5,6 +5,7 @@ import com.mcqqchatpool.config.PluginConfig;
 import com.mcqqchatpool.pool.ChatMessage;
 import com.mcqqchatpool.pool.ChatPool;
 import com.mcqqchatpool.pool.ChatPoolManager;
+import com.mcqqchatpool.security.MessageFilter;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
@@ -289,6 +290,8 @@ public final class BridgeHttpServer {
                 .put("since", since)
                 .put("cursor", cursor)
                 .put("pool_cursor", pool.cursor())
+                .put("total", pool.size())
+                .put("oldest_id", pool.firstId())
                 .put("count", items.size())
                 .put("has_more", hasMore)
                 .putRawArray("messages", items)
@@ -324,6 +327,35 @@ public final class BridgeHttpServer {
             return 413;
         }
 
+        // ---- 阻止敏感操作（1/2）：来源白名单 ----
+        // 外部注入只能声明 security.allowed-external-sources 里的 source，
+        // 否则可以谎报 console / mc 伪造控制台或玩家身份。
+        final String source = PluginConfig.normalize(
+                defaultIfBlank(Json.string(body, "source", ChatMessage.SOURCE_QQ), ChatMessage.SOURCE_QQ));
+        final Set<String> allowedSources = plugin.config().security().allowedExternalSources();
+        if (!allowedSources.isEmpty() && !allowedSources.contains(source)) {
+            plugin.getLogger().warning("拒绝了一条来源为 '" + source + "' 的外部注入（只允许 "
+                    + String.join(", ", allowedSources) + "）：" + preview(Json.string(body, "sender", ""), content));
+            sendJson(exchange, 403, errorBody("外部注入不允许声明 source: " + source
+                    + "（security.allowed-external-sources 只允许 " + String.join(", ", allowedSources) + "）。"));
+            return 403;
+        }
+
+        // ---- 阻止敏感操作（2/2）：内容过滤 ----
+        // 命令样式（/、!!）、控制字符、敏感词、链接数量；处置方式由 security.filter.action 决定。
+        final MessageFilter.Outcome outcome = plugin.messageFilter().check(content);
+        if (!outcome.allowed()) {
+            plugin.getLogger().warning("拦截了一条外部注入（" + outcome.reason() + "）："
+                    + preview(Json.string(body, "sender", ""), content));
+            sendJson(exchange, 403, errorBody("内容被安全过滤拦截：" + outcome.reason()));
+            return 403;
+        }
+        final String safeContent = outcome.text();
+        if (outcome.censored()) {
+            plugin.getLogger().info("已打码一条外部注入（" + outcome.reason() + "）："
+                    + preview(Json.string(body, "sender", ""), safeContent));
+        }
+
         final ChatPool pool = resolvePool(Json.string(body, "pool", null), true);
         if (!pool.config().allowFromQq()) {
             sendJson(exchange, 403, errorBody("聊天池 " + pool.name() + " 设置了 allow-from-qq: false，拒绝注入。"));
@@ -332,11 +364,10 @@ public final class BridgeHttpServer {
 
         final String sender = defaultIfBlank(Json.string(body, "sender", ""), "QQ用户");
         final String senderId = Json.string(body, "sender_id", "");
-        final String source = defaultIfBlank(Json.string(body, "source", ChatMessage.SOURCE_QQ), ChatMessage.SOURCE_QQ);
 
         try {
             final ChatPoolManager.PublishResult result = plugin.pools()
-                    .publishAsync(pool, source, sender, senderId, content)
+                    .publishAsync(pool, source, sender, senderId, safeContent)
                     .get(8, TimeUnit.SECONDS);
             sendJson(exchange, 200, Json.Obj.create()
                     .put("ok", true)
@@ -368,6 +399,13 @@ public final class BridgeHttpServer {
                     + "或把 chat.auto-create-pool 设为 true。");
         }
         return pool;
+    }
+
+    /** 日志里的内容预览：截断，避免长消息刷屏把日志撑爆。 */
+    private static String preview(final String sender, final String content) {
+        final String who = defaultIfBlank(sender, "?");
+        final String text = content == null ? "" : content;
+        return who + ": " + (text.length() > 60 ? text.substring(0, 60) + "…" : text);
     }
 
     private int resolveLimit(final String raw) {

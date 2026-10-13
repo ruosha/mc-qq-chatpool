@@ -62,10 +62,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\chatpool-e2e-test.
 会检查的前置条件：目标端口（游戏端口、插件 HTTP 端口、RCON 端口）必须空闲，
 否则直接报错退出——**不能在已有服务端运行时跑**，否则探测结果会被那个实例污染。
 
-实测（Paper 26.2 构建 132 + JDK 25）：脚本共 **32 项断言**全部通过
-（3 项启动就绪 + 1 项 RCON 登录 + 6 项 `/chatpool` 命令 + 20 项 HTTP + 2 项落盘），
+实测（Paper 26.2 构建 132 + JDK 25）：脚本共 **48 项断言**全部通过
+（3 项启动就绪 + 1 项 RCON 登录 + 6 项 `/chatpool` 命令 + 20 项 HTTP + 2 项落盘
++ 6 项安全过滤 + 3 项 `total`/`oldest_id` + 4 项 `retain-all` 开/关对比 + 3 项收尾）；
 其中 HTTP 部分覆盖鉴权 401/200、增量拉取与来源过滤、404/400/405/413 错误码与 limit 夹取；
-关服后 `state.yml` 正常落盘。
+`retain-all` 那几项会临时改插件 `config.yml`（先备份、`finally` 里还有安全网）再用
+`/chatpool reload` 生效；关服后 `state.yml` 正常落盘。
 
 ## 与 AstrBot 侧联调时踩过的坑
 

@@ -2,9 +2,11 @@ package com.mcqqchatpool;
 
 import com.mcqqchatpool.command.ChatPoolCommand;
 import com.mcqqchatpool.config.PluginConfig;
+import com.mcqqchatpool.config.SecurityConfig;
 import com.mcqqchatpool.http.BridgeHttpServer;
 import com.mcqqchatpool.listener.ChatPoolListener;
 import com.mcqqchatpool.pool.ChatPoolManager;
+import com.mcqqchatpool.security.MessageFilter;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.concurrent.Callable;
@@ -29,6 +31,8 @@ public final class McQqChatPoolPlugin extends JavaPlugin {
     private Lang lang;
     private ChatPoolManager pools;
     private BridgeHttpServer http;
+    /** 内容过滤器：配置重载时重建（无状态，重建成本极低）。 */
+    private MessageFilter messageFilter = new MessageFilter(SecurityConfig.defaults());
 
     @Override
     public void onEnable() {
@@ -37,6 +41,7 @@ public final class McQqChatPoolPlugin extends JavaPlugin {
         this.config = new PluginConfig(this);
         config.ensureDefaults();
         config.load();
+        this.messageFilter = new MessageFilter(config.security());
 
         this.lang = new Lang(this);
 
@@ -79,6 +84,7 @@ public final class McQqChatPoolPlugin extends JavaPlugin {
         reloadConfig();
         config.ensureDefaults();
         config.load();
+        this.messageFilter = new MessageFilter(config.security());
         lang.reload();
         pools.reload();
         if (http != null) {
@@ -134,5 +140,10 @@ public final class McQqChatPoolPlugin extends JavaPlugin {
 
     public BridgeHttpServer http() {
         return http;
+    }
+
+    /** 内容过滤器（来源白名单 + 敏感内容），配置重载时随之重建。 */
+    public MessageFilter messageFilter() {
+        return messageFilter;
     }
 }

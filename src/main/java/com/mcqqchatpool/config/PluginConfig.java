@@ -6,8 +6,11 @@ import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 插件配置的读取与默认值补齐。
@@ -44,6 +47,12 @@ public final class PluginConfig {
     private int pollDefaultLimit = 50;
     private int pollMaxLimit = 200;
     private int defaultMaxHistory = 200;
+    private boolean retainAllHistory = false;
+    private int retainAllLimit = 50000;
+    private int saveMaxMessages = 2000;
+
+    // ---- security ----
+    private SecurityConfig security = SecurityConfig.defaults();
 
     private Map<String, PoolConfig> pools = new LinkedHashMap<>();
 
@@ -79,6 +88,19 @@ public final class PluginConfig {
         changed |= setIfMissing(config, "history.poll-default-limit", 50);
         changed |= setIfMissing(config, "history.poll-max-limit", 200);
         changed |= setIfMissing(config, "history.default-max-history", 200);
+        changed |= setIfMissing(config, "history.retain-all", false);
+        changed |= setIfMissing(config, "history.retain-all-limit", 50000);
+        changed |= setIfMissing(config, "history.save-max-messages", 2000);
+
+        changed |= setIfMissing(config, "security.allowed-external-sources", List.of("qq"));
+        changed |= setIfMissing(config, "security.filter.enabled", true);
+        changed |= setIfMissing(config, "security.filter.action", "reject");
+        changed |= setIfMissing(config, "security.filter.block-command-like", true);
+        changed |= setIfMissing(config, "security.filter.block-control-chars", true);
+        changed |= setIfMissing(config, "security.filter.blocked-keywords", List.of(
+                "op", "deop", "ban", "ban-ip", "pardon", "kick", "whitelist", "gamemode", "execute", "sudo"));
+        changed |= setIfMissing(config, "security.filter.max-links", 0);
+        changed |= setIfMissing(config, "security.filter.apply-to-game-chat", false);
 
         final ConfigurationSection poolSection = config.getConfigurationSection("pools");
         if (poolSection == null || poolSection.getKeys(false).isEmpty()) {
@@ -132,6 +154,27 @@ public final class PluginConfig {
         this.pollDefaultLimit = clamp(config.getInt("history.poll-default-limit", 50), 1, 1000);
         this.pollMaxLimit = clamp(config.getInt("history.poll-max-limit", 200), this.pollDefaultLimit, 2000);
         this.defaultMaxHistory = clamp(config.getInt("history.default-max-history", 200), 1, 10000);
+        this.retainAllHistory = config.getBoolean("history.retain-all", false);
+        this.retainAllLimit = clamp(config.getInt("history.retain-all-limit", 50000), 1, 1_000_000);
+        this.saveMaxMessages = clamp(config.getInt("history.save-max-messages", 2000), 1, 1_000_000);
+
+        // ---- security ----
+        final List<String> keywords = config.getStringList("security.filter.blocked-keywords");
+        final Set<String> allowedSources = new LinkedHashSet<>();
+        for (final String raw : config.getStringList("security.allowed-external-sources")) {
+            if (raw != null && !raw.isBlank()) {
+                allowedSources.add(raw.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        this.security = new SecurityConfig(
+                config.getBoolean("security.filter.enabled", true),
+                SecurityConfig.FilterAction.parse(config.getString("security.filter.action", "reject")),
+                config.getBoolean("security.filter.block-command-like", true),
+                config.getBoolean("security.filter.block-control-chars", true),
+                List.copyOf(keywords),
+                Math.max(0, config.getInt("security.filter.max-links", 0)),
+                config.getBoolean("security.filter.apply-to-game-chat", false),
+                Set.copyOf(allowedSources));
 
         final Map<String, PoolConfig> parsed = new LinkedHashMap<>();
         final ConfigurationSection section = config.getConfigurationSection("pools");
@@ -258,6 +301,26 @@ public final class PluginConfig {
 
     public int defaultMaxHistory() {
         return defaultMaxHistory;
+    }
+
+    /** 是否不裁剪历史（「读取全部聊天记录」的总开关）。 */
+    public boolean retainAllHistory() {
+        return retainAllHistory;
+    }
+
+    /** 不裁剪模式下每个池的保留上限（安全阀，防止无限增长）。 */
+    public int retainAllLimit() {
+        return retainAllLimit;
+    }
+
+    /** 写进 state.yml 的最大消息条数（内存里可以留更多）。 */
+    public int saveMaxMessages() {
+        return saveMaxMessages;
+    }
+
+    /** 安全段配置（来源白名单 + 内容过滤）。 */
+    public SecurityConfig security() {
+        return security;
     }
 
     public Map<String, PoolConfig> pools() {

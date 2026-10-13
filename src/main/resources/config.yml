@@ -65,6 +65,54 @@ history:
   poll-max-limit: 200
   # 自动新建聊天池时的历史容量
   default-max-history: 200
+  # 不裁剪历史：开启后每个池实际保留 retain-all-limit 条（忽略池自己的 max-history），
+  # 配合 AstrBot 侧的 read_all_history / #mc all 就能读取「全部聊天记录」。
+  # 关掉时每个池只用上面的 max-history（默认每池 200~300 条）。
+  retain-all: false
+  # 不裁剪模式下的保留上限（安全阀，防止内存无限增长；1~1000000）
+  retain-all-limit: 50000
+  # state.yml 里每个池最多写多少条（内存里可以留更多，避免状态文件无限膨胀）
+  save-max-messages: 2000
+
+# ---------------------------------------------------------------------------
+#  安全：阻止敏感操作
+#
+#  说明：桥接内容只会被「广播成聊天」，插件里没有任何把消息当命令执行的路径
+#  （代码中不调用 dispatchCommand），这里的过滤是第二道防线。
+# ---------------------------------------------------------------------------
+security:
+  # 外部 HTTP 注入允许声明的 source 白名单。
+  # 默认只允许 qq；若允许 console/mc，外部程序就能伪造控制台或玩家身份。
+  # 想完全不限制就写成空列表 []（不建议）。
+  allowed-external-sources:
+    - qq
+
+  filter:
+    # 内容过滤开关
+    enabled: true
+    # 命中后的处置：reject 直接拒绝 | censor 打码后放行 | log 只记日志（先观察再收紧）
+    action: reject
+    # 拦截形如命令的内容（以 / 或 !! 开头）
+    block-command-like: true
+    # 拦截控制字符（换行、制表符、§ 颜色符、零宽字符等）
+    block-control-chars: true
+    # 敏感词，按「整词」匹配（ASCII 不区分大小写，中文按子串）
+    blocked-keywords:
+      - op
+      - deop
+      - ban
+      - ban-ip
+      - pardon
+      - kick
+      - whitelist
+      - gamemode
+      - execute
+      - sudo
+    # 允许的最大链接数，0 表示不限制
+    max-links: 0
+    # 是否同样过滤游戏内玩家的发言（默认只过滤外部注入；开启后命中就不进聊天池，
+    # 原版聊天不受影响）
+    apply-to-game-chat: false
 
 # ---------------------------------------------------------------------------
 #  聊天池定义：每个池就是一个独立频道，对应 QQ 群由 AstrBot 侧配置
@@ -108,6 +156,7 @@ formats:
 messages:
   prefix: "<gray>[</gray><aqua>聊天池</aqua><gray>]</gray> "
   player-only: "<red>这个命令只能由玩家执行。"
+  security.blocked: "<red>这条消息包含敏感内容（{reason}），没有发到聊天池。"
   reload.done: "<green>配置已重新加载。"
   pool.not-found: "<red>没有找到聊天池 <white>{pool}</white><red>，用 <white>/chatpool list</white> 看看有哪些。"
   pool.invalid-name: "<red>聊天池名不合法：只能用字母、数字、下划线和短横线，且以字母或数字开头（最长 32 字符）。"

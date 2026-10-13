@@ -38,6 +38,7 @@ public final class Lang {
 
         messageDefaults.put("prefix", "<gray>[</gray><aqua>聊天池</aqua><gray>]</gray> ");
         messageDefaults.put("player-only", "<red>这个命令只能由玩家执行。");
+        messageDefaults.put("security.blocked", "<red>这条消息包含敏感内容（{reason}），没有发到聊天池。");
         messageDefaults.put("reload.done", "<green>配置已重新加载。");
         messageDefaults.put("pool.not-found", "<red>没有找到聊天池 <white>{pool}</white><red>，用 <white>/chatpool list</white> 看看有哪些。");
         messageDefaults.put("pool.invalid-name", "<red>聊天池名不合法：只能用字母、数字、下划线和短横线，且以字母或数字开头（最长 32 字符）。");

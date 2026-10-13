@@ -122,7 +122,7 @@ X-Auth-Token: <token>
 
 ```json
 {"ok":true,"pool":"global","mode":"incremental","since":0,"cursor":7,"pool_cursor":7,
- "count":2,"has_more":false,
+ "total":7,"oldest_id":1,"count":2,"has_more":false,
  "messages":[
    {"id":6,"pool":"global","source":"mc","sender":"Steve","sender_id":"<玩家UUID>",
     "content":"有人一起打末影龙吗","time":"2026-10-12T14:14:02.927Z","time_ms":1791814442927}]}
@@ -133,7 +133,14 @@ X-Auth-Token: <token>
   尾部模式（不带 `since`）下它是**最后一条返回消息的 ID**；若过滤后一条都没有，则取该池当前的最大 ID
   （`pool_cursor`），也就是「已经同步到最新位置」的意思——首次同步就该这样用。
 * `has_more` 为 `true` 表示还有积压，可以立刻再拉一次。它**只在增量模式下计算**，尾部模式恒为 `false`。
+* `total` 是该池当前保留的消息条数，`oldest_id` 是最早一条（仍保留的）消息 ID。这两个字段配合
+  `since` 就能界定「全部聊天记录」的范围：从 `oldest_id` 开始拉、拉到 `total` 条为止。
 * `pool_cursor` 是该池当前最大 ID，仅供展示。
+
+**怎么读取全部聊天记录**：服务端把 `history.retain-all` 设为 `true`（每个池保留 `retain-all-limit` 条，
+默认 5 万，此时池自己的 `max-history` 被忽略）；客户端用 `since=0&limit=200` 循环拉取，
+每轮把返回的 `cursor` 当作下一轮的 `since`，直到 `has_more` 为 `false`。
+AstrBot 侧对应的能力是配置项 `read_all_history`（首次同步就回放全部历史）和 `#mc all` 命令（手动导出）。
 
 ### `POST /api/v1/messages` — 注入一条外部消息（群聊 → 游戏）
 
@@ -160,7 +167,7 @@ X-Auth-Token: <token>
 |---|---|
 | `400` | 请求体不是合法 JSON / `content` 为空 / 池名不合法 |
 | `401` | 令牌缺失或不匹配 |
-| `403` | 该池设置了 `allow-from-qq: false` |
+| `403` | 该池设置了 `allow-from-qq: false`；或外部注入声明了不在 `security.allowed-external-sources` 里的 `source`；或内容被安全过滤拦截（`error` 里带原因） |
 | `404` | 路径不存在，或池未定义且 `chat.auto-create-pool: false` |
 | `405` | 方法不对 |
 | `413` | 请求体超过 `http.max-body-bytes`，或内容超过 `chat.max-message-length` |
@@ -247,6 +254,24 @@ history:
   poll-default-limit: 50
   poll-max-limit: 200
   default-max-history: 200
+  retain-all: false          # 不裁剪历史（「读取全部聊天记录」的总开关，见 6.3）
+  retain-all-limit: 50000    # 不裁剪时每个池的保留上限（安全阀，防止内存无限增长）
+  save-max-messages: 2000    # state.yml 每个池最多写多少条（内存里可以留更多）
+
+# 安全：阻止敏感操作（见 6.4）
+security:
+  # 外部 HTTP 注入允许声明的 source 白名单。默认只允许 qq —— 否则外部程序可以
+  # 谎报 console / mc 来伪造控制台或玩家身份。写空列表 [] 表示不限制（不建议）。
+  allowed-external-sources: [ "qq" ]
+  filter:
+    enabled: true
+    action: "reject"          # reject 拒绝 | censor 打码后放行 | log 只记日志（先观察）
+    block-command-like: true  # 拦截以 / 或 !! 开头的内容
+    block-control-chars: true # 拦截换行、制表符、§ 颜色符、零宽字符等
+    blocked-keywords: [ "op", "deop", "ban", "ban-ip", "pardon", "kick",
+                        "whitelist", "gamemode", "execute", "sudo" ]   # 整词匹配
+    max-links: 0              # 允许的最大链接数，0 = 不限制
+    apply-to-game-chat: false # 是否同样过滤游戏内发言（默认只过滤外部注入）
 
 pools:
   global:
@@ -282,6 +307,37 @@ messages:     # 所有提示文案，同样是 MiniMessage，可随意改
 `http.max-body-bytes` ≥1024、`history.save-interval-seconds` ≥10、
 `history.poll-default-limit` 1–1000、`history.poll-max-limit` 不超过 2000 且不小于前者、
 池的 `max-history` ≥1、接口的 `limit` 参数同样按上面两条夹取。
+
+### 6.3 读取全部聊天记录（`history.retain-all`）
+
+默认每个池按自己的 `max-history`（默认 200~300 条）裁剪，接口只能拉到这段尾巴。
+把 `history.retain-all` 设为 `true` 之后：
+
+* 每个池实际保留 `history.retain-all-limit` 条（默认 50000，最大 1000000），此时池自己的
+  `max-history` 被忽略，启动/重载日志里会写明；
+* 接口可以从 `since=0` 开始分页拉取全部历史，响应里的 `total` / `oldest_id` 帮你界定范围；
+* `history.save-max-messages`（默认 2000）只限制写进 `state.yml` 的条数，避免状态文件无限膨胀
+  —— 重启后最多恢复这么多条。
+
+代价是内存占用随保留条数增长（一条消息约几百字节，5 万条约十几 MB）。`/chatpool info <池>`
+里的「历史保留上限」显示的就是实际值。
+
+### 6.4 阻止敏感操作（`security`）
+
+三道防线：
+
+1. **来源白名单** `security.allowed-external-sources`（默认 `[ "qq" ]`）：`POST /api/v1/messages`
+   里客户端自带的 `source` 必须在这个列表里，否则 `403`。不设这道闸，任何能访问接口的程序都能
+   谎报 `console` / `mc` 来伪造控制台或玩家身份。
+2. **内容过滤** `security.filter`：依次检查控制字符 → 命令样式（`/`、`!!` 开头）→ 敏感词（**整词**匹配，
+   默认 `op` / `ban` / `kick` / `gamemode` 等 10 个，可用 `blocked-keywords` 增删）→ 链接数量，
+   命中后按 `action` 处置：`reject` 丢弃（接口回 `403` 并说明原因）、`censor` 把命中片段替换成
+   `***` 后放行、`log` 放行但记日志（先用来观察会拦到什么，再收紧）。
+3. **桥接内容永远不会被当作命令执行**：消息只会被广播成聊天，插件里没有任何
+   `dispatchCommand` 之类的调用，过滤器只是第二道防线。
+
+`apply-to-game-chat: true` 时游戏内玩家的发言也会过一遍过滤，命中就不写进聊天池（原版聊天照常显示，
+发言的玩家会收到一条提示）；默认 `false`，只过滤外部注入。
 
 **转义**：占位符替换后的内容会被 MiniMessage 转义，玩家无法用 `<click:…>` 之类的标签注入样式或点击事件。
 
@@ -388,7 +444,7 @@ mvn package
 ## 11. 已验证环境
 
 Paper **26.2 构建 132** + JDK 25（Amazon Corretto 25.0.4），2026-10-12 在真实服务器上端到端验证。
-`scripts/chatpool-e2e-test.ps1` 会自己构建、起服、跑命令并断言全部 HTTP 行为，**33 项断言 0 失败**：
+`scripts/chatpool-e2e-test.ps1` 会自己构建、起服、跑命令并断言全部 HTTP 行为，**48 项断言 0 失败**：
 
 | 项目 | 结果 |
 |---|---|
@@ -397,7 +453,9 @@ Paper **26.2 构建 132** + JDK 25（Amazon Corretto 25.0.4），2026-10-12 在�
 | 鉴权 | 无 token、错误 token → `401`；正确 token（请求头或查询参数）→ `200` |
 | 增量拉取 | `since` 游标推进正确；`exclude_source=qq` 能正确过滤注入消息 |
 | 注入 | `POST /messages` 返回新 ID 与 `delivered` 人数；在线玩家实时收到广播 |
-| 错误码 | 脚本断言了 `400 / 401 / 404 / 405 / 413`；`403`（池设置 `allow-from-qq: false`）、`429`（超过注入频率）、`500`（内部错误）也都有实现，但脚本里没有构造这三种场景 |
+| 错误码 | 脚本断言了 `400 / 401 / 403 / 404 / 405 / 413`；`429`（超过注入频率）与 `500`（内部错误）有实现但脚本没构造这两种场景 |
+| 阻止敏感操作 | `source=console` / `source=mc` → `403`；`/op Steve`（命令样式）、`please give me op now`（敏感词）、带 `§` 的内容 → `403`，且被拒内容确认没有进池 |
+| 全部聊天记录 | 响应带 `total` / `oldest_id`；`retain-all` 关闭时 `max-history: 5` 只留 5 条，打开后 8 条全留，`/chatpool info` 显示实际保留上限与过滤动作 |
 | 持久化 | 关服后 `state.yml` 写入历史尾巴、ID 游标与订阅关系 |
 
 ## 12. 版本
