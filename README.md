@@ -273,6 +273,19 @@ security:
     max-links: 0              # 允许的最大链接数，0 = 不限制
     apply-to-game-chat: false # 是否同样过滤游戏内发言（默认只过滤外部注入）
 
+# 主动推送：把入池的消息 POST 给 AstrBot 的推送接收端（见 6.5）
+push:
+  enabled: false
+  url: "http://127.0.0.1:6198/mc-chatpool/push"
+  token: ""                   # 与接收端约定的令牌（Authorization: Bearer …）
+  exclude-sources: [ "qq" ]   # 这些来源不回推，默认丢 qq 防回环
+  pools: []                   # 只推送这些池；留空 = 全部
+  timeout-ms: 5000
+  max-retries: 3
+  retry-delay-ms: 1000
+  queue-size: 512             # 队列满丢最旧（保护内存）
+  log-requests: false         # 跨机排错时打开
+
 pools:
   global:
     display-name: "全服"
@@ -338,6 +351,29 @@ messages:     # 所有提示文案，同样是 MiniMessage，可随意改
 
 `apply-to-game-chat: true` 时游戏内玩家的发言也会过一遍过滤，命中就不写进聊天池（原版聊天照常显示，
 发言的玩家会收到一条提示）；默认 `false`，只过滤外部注入。
+
+### 6.5 主动推送（`push`，MC 服务器不在 AstrBot 那台机器时用）
+
+平时 AstrBot 是**轮询**本插件的 HTTP 接口拿消息的（§5）。当 MC 服务器搬到别的机器上、
+AstrBot 拉不到 `8123` 时，可以反过来：**由本插件主动把消息 POST 过去**。
+
+```yaml
+push:
+  enabled: true
+  url: "http://<云服务器>:<端口>/mc-chatpool/push"   # 见 AstrBot 插件 README 的「推送接收端」
+  token: "两端一致的令牌"
+  exclude-sources: [ "qq" ]    # 默认不回推 qq 来源，避免 QQ → MC → QQ 回环
+```
+
+* 接收端由 `astrbot_plugin_mc_chatpool` 提供（`enable_receive` / `receive_port` / `receive_token`）。
+  跨机时用 frp 或 `ssh -R` 把它暴露到能互相访问的地址上，**建议只暴露这一个专用端口 + 必须设令牌**，
+  不要暴露 AstrBot 的 6185 面板。
+* 发布路径只做**非阻塞入队**，不会卡住主线程或 HTTP 线程；发送失败按 `push.max-retries` 重试，
+  仍失败只记警告——消息本身仍在池历史里，随时可以用轮询兜底。
+* 队列满时丢最旧的并限流告警（`push.queue-size`），避免接收端挂掉时内存无限增长。
+* **不要同时用轮询和推送同一批消息**，否则群里会重复；二选一，或让 `exclude-sources`/`pools`
+  把两边要处理的范围错开。
+* 排错时把 `push.log-requests` 设为 `true`，日志里会出现「推送入队」与「推送结果：HTTP …」。
 
 **转义**：占位符替换后的内容会被 MiniMessage 转义，玩家无法用 `<click:…>` 之类的标签注入样式或点击事件。
 
