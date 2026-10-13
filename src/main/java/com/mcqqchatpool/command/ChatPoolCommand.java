@@ -223,6 +223,9 @@ public final class ChatPoolCommand {
         line(sender, "说明", String.valueOf(info.get("description")));
         line(sender, "在线 / 订阅", info.get("online") + " / " + info.get("members"));
         line(sender, "历史条数", String.valueOf(info.get("history")));
+        line(sender, "历史保留上限", info.get("retention_cap")
+                + (Boolean.TRUE.equals(info.get("retain_all")) ? "（retain-all：不裁剪）" : ""));
+        line(sender, "安全过滤", String.valueOf(info.get("security_filter")));
         line(sender, "消息游标", String.valueOf(info.get("cursor")));
         line(sender, "默认订阅", pool.config().defaultJoin() ? "是" : "否");
         line(sender, "允许 QQ 注入", pool.config().allowFromQq() ? "是" : "否");

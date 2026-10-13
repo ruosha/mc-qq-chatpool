@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 #  McQqChatPool - end to end test
 #
 #  What it does:
@@ -325,6 +325,65 @@ try {
     Assert 'method not allowed -> 405' ((Api 'DELETE' '/api/v1/messages' $null $auth).Status -eq 405)
     Assert 'unknown path -> 404' ((Api 'GET' '/api/v1/nope' $null $auth).Status -eq 404)
     Assert 'out of range limit is clamped -> 200' ((Api 'GET' '/api/v1/messages?pool=global&since=0&limit=99999' $null $auth).Status -eq 200)
+
+    # ------------------------------------------- 阻止敏感操作（security 段）-----
+    Assert 'source=console is rejected -> 403' ((Api 'POST' '/api/v1/messages' @{ pool = 'global'; source = 'console'; content = 'i am the console' } $auth).Status -eq 403)
+    Assert 'source=mc is rejected -> 403' ((Api 'POST' '/api/v1/messages' @{ pool = 'global'; source = 'mc'; content = 'i am a player' } $auth).Status -eq 403)
+    Assert 'command-like content is rejected -> 403' ((Api 'POST' '/api/v1/messages' @{ pool = 'global'; content = '/op Steve' } $auth).Status -eq 403)
+    Assert 'blocked keyword is rejected -> 403' ((Api 'POST' '/api/v1/messages' @{ pool = 'global'; content = 'please give me op now' } $auth).Status -eq 403)
+    Assert 'control character is rejected -> 403' ((Api 'POST' '/api/v1/messages' @{ pool = 'global'; content = "hi$([char]0x00a7)cred" } $auth).Status -eq 403)
+    Assert 'ordinary content still passes -> 200' ((Api 'POST' '/api/v1/messages' @{ pool = 'global'; content = 'e2e security check passed' } $auth).Status -eq 200)
+    Assert 'rejected content never reached the pool' (-not (@((Convert-Json (Api 'GET' '/api/v1/messages?pool=global&since=0&limit=200' $null $auth).Body).messages.content) -contains '/op Steve'))
+
+    # --------------------------------------- 全部聊天记录：分页所需的元信息 ----
+    $full = Convert-Json (Api 'GET' '/api/v1/messages?pool=global&since=0&limit=200' $null $auth).Body
+    Assert 'GET /messages exposes total' ($null -ne $full.total)
+    Assert 'GET /messages exposes oldest_id' ($null -ne $full.oldest_id)
+    Assert 'total is not smaller than count' ([int]$full.total -ge [int]$full.count)
+
+    # --------------------------------- 历史保留：retain-all 开/关的行为对比 ----
+    $cfgBackup = "$pluginConfig.e2e-bak"
+    if (Test-Path $pluginConfig) {
+        Copy-Item $pluginConfig $cfgBackup -Force
+        $enc = New-Object Text.UTF8Encoding($false)
+        $raw = [IO.File]::ReadAllText($pluginConfig, $enc)
+        $patched = $raw -replace '(?m)^(\s*max-history:\s*)300\s*$', '${1}5'
+        $patched = $patched -replace '(?m)^(\s*retain-all:\s*).*$', '${1}false'
+        [IO.File]::WriteAllText($pluginConfig, $patched, $enc)
+        Send-Rcon $stream 2 2 'chatpool reload'; $null = Read-Rcon $stream
+        Start-Sleep -Seconds 2
+        for ($i = 1; $i -le 8; $i++) {
+            Api 'POST' '/api/v1/messages' @{ pool = 'global'; content = "trim probe $i" } $auth | Out-Null
+        }
+        $trim = Convert-Json (Api 'GET' '/api/v1/messages?pool=global&since=0&limit=200' $null $auth).Body
+        $trimKept = @($trim.messages | Where-Object { $_.content -like 'trim probe*' }).Count
+        Assert 'max-history still trims while retain-all is off' ($trimKept -eq 5) "kept $trimKept of 8"
+
+        $raw2 = [IO.File]::ReadAllText($pluginConfig, $enc)
+        $patched2 = $raw2 -replace '(?m)^(\s*retain-all:\s*).*$', '${1}true'
+        $patched2 = $patched2 -replace '(?m)^(\s*retain-all-limit:\s*).*$', '${1}50'
+        [IO.File]::WriteAllText($pluginConfig, $patched2, $enc)
+        Send-Rcon $stream 2 2 'chatpool reload'; $null = Read-Rcon $stream
+        Start-Sleep -Seconds 2
+        Send-Rcon $stream 2 2 'chatpool info global'
+        $infoText = Clean-Console (Read-Rcon $stream).Body
+        Assert '/chatpool info reports the security filter' ($infoText -match 'reject') "got: $infoText"
+        Assert '/chatpool info reports the raised retention cap' ($infoText -match ':\s*50') "got: $infoText"
+        for ($i = 1; $i -le 8; $i++) {
+            Api 'POST' '/api/v1/messages' @{ pool = 'global'; content = "retain probe $i" } $auth | Out-Null
+        }
+        $keep = Convert-Json (Api 'GET' '/api/v1/messages?pool=global&since=0&limit=200' $null $auth).Body
+        $keepKept = @($keep.messages | Where-Object { $_.content -like 'retain probe*' }).Count
+        Assert 'retain-all keeps more than max-history' ($keepKept -eq 8) "kept $keepKept of 8"
+
+        Copy-Item $cfgBackup $pluginConfig -Force
+        Remove-Item $cfgBackup -Force
+        Send-Rcon $stream 2 2 'chatpool reload'; $null = Read-Rcon $stream
+        Start-Sleep -Seconds 2
+        Assert 'plugin still serves requests after the config restore' ((Api 'GET' '/api/v1/health' $null $auth).Status -eq 200)
+    } else {
+        Write-Host '    plugin config.yml not found - skipping the retain-all checks'
+    }
 } finally {
     # Stop the server gracefully even when a check above threw.
     if ($stream) {
@@ -343,6 +402,12 @@ try {
     }
     if (Test-Path $propsBackup) { Move-Item $propsBackup $propsFile -Force }
     Step 'server.properties restored (RCON off)'
+    # 安全网：万一前面在 retain-all 检查中途抛了异常，插件配置也要还原
+    $cfgBak = "$pluginConfig.e2e-bak"
+    if (Test-Path $cfgBak) {
+        Move-Item $cfgBak $pluginConfig -Force
+        Step 'plugin config.yml restored'
+    }
 }
 
 # ---------------------------------------------------------------- results ----

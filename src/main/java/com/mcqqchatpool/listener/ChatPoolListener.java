@@ -3,6 +3,7 @@ package com.mcqqchatpool.listener;
 import com.mcqqchatpool.McQqChatPoolPlugin;
 import com.mcqqchatpool.pool.ChatMessage;
 import com.mcqqchatpool.pool.ChatPool;
+import com.mcqqchatpool.security.MessageFilter;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;
@@ -55,12 +56,25 @@ public final class ChatPoolListener implements Listener {
         }
 
         final Player player = event.getPlayer();
-        final String content = PLAIN.serialize(event.message()).trim();
+        String content = PLAIN.serialize(event.message()).trim();
         if (content.isEmpty()) {
             return;
         }
         if (content.length() > plugin.config().maxMessageLength()) {
             return;
+        }
+
+        // security.filter.apply-to-game-chat 打开时，游戏内发言也过滤一遍：
+        // 命中敏感内容就不写进聊天池（原版聊天照常显示，只是不转发给 QQ）。
+        if (plugin.config().security().applyToGameChat()) {
+            final MessageFilter.Outcome outcome = plugin.messageFilter().check(content);
+            if (!outcome.allowed()) {
+                plugin.lang().send(player, "security.blocked", "reason", outcome.reason());
+                plugin.getLogger().info("拦下了玩家 " + player.getName() + " 的发言（"
+                        + outcome.reason() + "），未写入聊天池。");
+                return;
+            }
+            content = outcome.text();
         }
 
         for (final ChatPool pool : plugin.pools().pools()) {

@@ -96,6 +96,7 @@ public final class ChatPoolManager {
         }
 
         plugin.getLogger().info("已加载 " + pools.size() + " 个聊天池：" + String.join(", ", pools.keySet()));
+        applyRetention();
     }
 
     /** 重新读取配置（池定义会被更新，历史保留）。 */
@@ -109,6 +110,25 @@ public final class ChatPoolManager {
                 existing.config(entry.getValue());
                 return existing;
             });
+        }
+        applyRetention();
+    }
+
+    /**
+     * 按配置统一设置每个池的保留上限。
+     *
+     * <p>默认每个池用自己的 {@code max-history}；开启 {@code history.retain-all} 后
+     * 全部改成 {@code history.retain-all-limit} —— 这是「读取全部聊天记录」能成立的前提。
+     */
+    private void applyRetention() {
+        final PluginConfig config = plugin.config();
+        final int globalCap = config.retainAllHistory() ? config.retainAllLimit() : -1;
+        for (final ChatPool pool : pools.values()) {
+            pool.retentionCap(globalCap > 0 ? globalCap : Math.max(1, pool.config().maxHistory()));
+        }
+        if (config.retainAllHistory()) {
+            plugin.getLogger().info("history.retain-all 已开启：每个池最多保留 " + config.retainAllLimit()
+                    + " 条历史（各池自己的 max-history 被忽略）。");
         }
     }
 
@@ -132,6 +152,9 @@ public final class ChatPoolManager {
             return null;
         }
         final ChatPool created = new ChatPool(normalized, PoolConfig.defaults(normalized, plugin.config().defaultMaxHistory()));
+        if (plugin.config().retainAllHistory()) {
+            created.retentionCap(plugin.config().retainAllLimit());
+        }
         pools.put(normalized, created);
         dirty = true;
         plugin.getLogger().info("按需创建了聊天池：" + normalized);
@@ -307,9 +330,14 @@ public final class ChatPoolManager {
         final Map<UUID, String> names = new LinkedHashMap<>();
         final Map<UUID, Set<String>> memberships = new LinkedHashMap<>();
 
+        // 内存里可以留很多条（retain-all），但 state.yml 只写最近 save-max-messages 条，
+        // 免得文件无限膨胀、每次自动保存都在写几 MB。
+        final int saveCap = plugin.config().saveMaxMessages();
         for (final ChatPool pool : pools.values()) {
+            final List<ChatMessage> snapshot = pool.snapshot();
+            final int from = Math.max(0, snapshot.size() - saveCap);
             final List<Map<String, Object>> serialized = new ArrayList<>();
-            for (final ChatMessage message : pool.snapshot()) {
+            for (final ChatMessage message : snapshot.subList(from, snapshot.size())) {
                 serialized.add(message.toMap());
             }
             state.set("pools." + pool.name(), serialized);
@@ -405,6 +433,11 @@ public final class ChatPoolManager {
         info.put("allow_from_qq", pool.config().allowFromQq());
         info.put("allow_from_mc", pool.config().allowFromMc());
         info.put("max_history", pool.config().maxHistory());
+        info.put("retention_cap", pool.retentionCap());
+        info.put("retain_all", plugin.config().retainAllHistory());
+        info.put("security_filter", plugin.config().security().filterEnabled()
+                ? plugin.config().security().action().name().toLowerCase(java.util.Locale.ROOT)
+                : "off");
         info.put("history", pool.size());
         info.put("members", pool.subscriberCount());
         info.put("online", onlineSubscriberNames(pool).size());
