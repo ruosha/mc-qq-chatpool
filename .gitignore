@@ -5,6 +5,10 @@ out/
 # gradle
 .gradle/
 
+# Maven output on the sibling "maven" branch - ignored here too so that
+# switching between the two branches never leaves an untracked directory
+target/
+
 # local-only helper script (uses an absolute toolchain path of the author's machine)
 build-local.bat
 
