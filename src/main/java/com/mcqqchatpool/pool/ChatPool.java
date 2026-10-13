@@ -1,6 +1,6 @@
-package com.dsh.mcqqchatpool.pool;
+package com.mcqqchatpool.pool;
 
-import com.dsh.mcqqchatpool.config.PoolConfig;
+import com.mcqqchatpool.config.PoolConfig;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;

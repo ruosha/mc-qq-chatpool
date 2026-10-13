@@ -1,10 +1,10 @@
-package com.dsh.mcqqchatpool;
+package com.mcqqchatpool;
 
-import com.dsh.mcqqchatpool.command.ChatPoolCommand;
-import com.dsh.mcqqchatpool.config.PluginConfig;
-import com.dsh.mcqqchatpool.http.BridgeHttpServer;
-import com.dsh.mcqqchatpool.listener.ChatPoolListener;
-import com.dsh.mcqqchatpool.pool.ChatPoolManager;
+import com.mcqqchatpool.command.ChatPoolCommand;
+import com.mcqqchatpool.config.PluginConfig;
+import com.mcqqchatpool.http.BridgeHttpServer;
+import com.mcqqchatpool.listener.ChatPoolListener;
+import com.mcqqchatpool.pool.ChatPoolManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.concurrent.Callable;

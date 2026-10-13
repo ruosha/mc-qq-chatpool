@@ -1,10 +1,10 @@
-package com.dsh.mcqqchatpool.http;
+package com.mcqqchatpool.http;
 
-import com.dsh.mcqqchatpool.McQqChatPoolPlugin;
-import com.dsh.mcqqchatpool.config.PluginConfig;
-import com.dsh.mcqqchatpool.pool.ChatMessage;
-import com.dsh.mcqqchatpool.pool.ChatPool;
-import com.dsh.mcqqchatpool.pool.ChatPoolManager;
+import com.mcqqchatpool.McQqChatPoolPlugin;
+import com.mcqqchatpool.config.PluginConfig;
+import com.mcqqchatpool.pool.ChatMessage;
+import com.mcqqchatpool.pool.ChatPool;
+import com.mcqqchatpool.pool.ChatPoolManager;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 

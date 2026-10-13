@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-group = "com.dsh"
+group = "com.mcqqchatpool"
 version = "1.0.0"
 description = "Paper 26.2 插件：聊天池 —— Minecraft 与 QQ 群聊双向互通"
 

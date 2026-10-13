@@ -1,4 +1,4 @@
-package com.dsh.mcqqchatpool.http;
+package com.mcqqchatpool.http;
 
 import java.util.ArrayList;
 import java.util.Collection;

@@ -1,6 +1,6 @@
-package com.dsh.mcqqchatpool.pool;
+package com.mcqqchatpool.pool;
 
-import com.dsh.mcqqchatpool.http.Json;
+import com.mcqqchatpool.http.Json;
 
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
